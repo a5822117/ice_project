@@ -6,6 +6,7 @@
 #define REFACTORINGIVR_COLOR_H
 
 #include <Eigen/Dense>
+#include <string>
 
 using Color = Eigen::Vector3d;
 

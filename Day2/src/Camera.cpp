@@ -38,4 +38,3 @@ void Camera::filmView(const unsigned int &p_x, const unsigned int &p_y, Ray &out
 const Film &Camera::getFilm() const {
     return film;
 }
-

@@ -3,15 +3,19 @@
 //
 
 #include "Color.h"
+#include <cstdlib>
+#include <cstdint>
 
 Color codeToColor(const std::string &colorCode) {
-    const auto rgb = (uint32_t) strtol((const char *) &colorCode[1], nullptr, 16);
+    const auto rgb = static_cast<uint32_t>(strtol(&colorCode[1], nullptr, 16));
 
     const auto red = (rgb >> 16) & 0xFF;
     const auto green = (rgb >> 8) & 0xFF;
     const auto blue = (rgb >> 0) & 0xFF;
 
-    return Color{(double)red / 255, (double)green / 255, (double)blue / 255};
+    return Color{static_cast<double>(red) / 255.0,
+                 static_cast<double>(green) / 255.0,
+                 static_cast<double>(blue) / 255.0};
 }
 
 double getLuminance(const Color &c) {
@@ -21,5 +25,3 @@ double getLuminance(const Color &c) {
 Color changeLuminance(const Color &c, const double &l_out) {
     return c * (l_out / getLuminance(c));
 }
-
-

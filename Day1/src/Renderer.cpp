@@ -18,11 +18,11 @@ Renderer::Renderer(const std::vector<Body> &bodies, Camera camera, Color bgColor
  */
 bool Renderer::hitScene(const Ray &ray, RayHit &hit) const {
     /// hitするBodyのうち最小距離のものを探す
-    hit.t = DBL_MAX;
+    hit.t = DBL_MAX;//
     hit.idx = -1;
     for(int i = 0; i < bodies.size();++ i) {
         RayHit _hit;
-        if(bodies[i].hit(ray, _hit) && _hit.t < hit.t) {
+        if(bodies[i].hit(ray, _hit) && _hit.t < hit.t) {//一番手前に当たったものを返す
             hit.t = _hit.t;
             hit.idx = i;
             hit.point = _hit.point;
