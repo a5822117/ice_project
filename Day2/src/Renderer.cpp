@@ -258,6 +258,7 @@ Image Renderer::spectralRender(const unsigned int &samplesPerPixel) const {
 
 //==============================================================================
 // Spectral Path Tracing（単一波長）
+// 【修正】気泡（空気、IOR=1.0）は波長依存しない
 //==============================================================================
 
 double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
@@ -293,6 +294,7 @@ double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
     if (mat.type == MaterialType::Glass) {
         //======================================================================
         // Glass/Ice material - 波長依存の屈折率を使用
+        // 【重要な修正】気泡（空気、IOR≈1.0）は波長依存しない
         //======================================================================
         Eigen::Vector3d incident = ray.dir.normalized();
         Eigen::Vector3d normal = hit.normal.normalized();
@@ -301,7 +303,15 @@ double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
         double cosI = -incident.dot(normal);
 
         // 波長依存の屈折率を取得
-        double spectralIOR = getIceIOR(wavelengthIndex);
+        // 気泡（空気）の場合はIOR=1.0を維持、氷の場合のみ波長依存IORを使用
+        double spectralIOR;
+        if (std::abs(mat.ior - 1.0) < 0.05) {
+            // 空気（気泡）: 波長に依存しないIOR = 1.0
+            spectralIOR = 1.0;
+        } else {
+            // 氷: 波長依存の屈折率を使用（Warren 1984）
+            spectralIOR = getIceIOR(wavelengthIndex);
+        }
 
         if (cosI < 0) {
             normal = -normal;
