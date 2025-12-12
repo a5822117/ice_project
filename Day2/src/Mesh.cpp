@@ -1,5 +1,6 @@
 //
-// Created for OBJ mesh support
+// Mesh.cpp
+// OBJ mesh support with BVH acceleration
 //
 
 #include "Mesh.h"
@@ -17,6 +18,7 @@ bool Mesh::loadOBJ(const std::string &filename) {
 
     vertices.clear();
     triangles.clear();
+    bvhBuilt = false;
 
     std::string line;
 
@@ -57,14 +59,28 @@ bool Mesh::loadOBJ(const std::string &filename) {
     file.close();
     updateBoundingBox();
 
+    // BVHを構築
+    buildBVH();
+
     std::cout << "Loaded OBJ: " << vertices.size() << " vertices, "
               << triangles.size() << " triangles" << std::endl;
+    std::cout << "BVH built for mesh acceleration" << std::endl;
 
     return true;
 }
 
+void Mesh::buildBVH() {
+    if (triangles.empty()) {
+        bvhBuilt = false;
+        return;
+    }
+
+    bvh.build(triangles);
+    bvhBuilt = true;
+}
+
 bool Mesh::hit(const Ray &ray, RayHit &hit) const {
-    // バウンディングボックスとの交差判定（高速化）
+    // まずバウンディングボックスとの交差判定（高速な事前チェック）
     double tMin = 0.0, tMax = std::numeric_limits<double>::max();
     for (int i = 0; i < 3; ++i) {
         double invD = 1.0 / ray.dir[i];
@@ -76,7 +92,12 @@ bool Mesh::hit(const Ray &ray, RayHit &hit) const {
         if (tMax <= tMin) return false;
     }
 
-    // 全三角形との交差判定
+    // BVHを使用した高速な交差判定
+    if (bvhBuilt && bvh.root) {
+        return bvh.intersect(triangles, ray, hit);
+    }
+
+    // フォールバック：線形探索（BVHがない場合）
     hit.t = std::numeric_limits<double>::max();
     hit.idx = -1;
     bool hitAny = false;
@@ -102,6 +123,9 @@ void Mesh::translate(const Eigen::Vector3d &offset) {
         tri.v2 += offset;
     }
     updateBoundingBox();
+
+    // 変換後はBVHを再構築
+    buildBVH();
 }
 
 void Mesh::scale(double s) {
@@ -115,6 +139,9 @@ void Mesh::scale(double s) {
         tri.v2 = center + (tri.v2 - center) * s;
     }
     updateBoundingBox();
+
+    // 変換後はBVHを再構築
+    buildBVH();
 }
 
 void Mesh::updateBoundingBox() {

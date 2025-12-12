@@ -1,13 +1,6 @@
 //
-// Created by MitaniRyota on 2025/12/11.
-//
-
-#ifndef MESH_H
-#define MESH_H
-
-#endif //MESH_H
-//
-// Created for OBJ mesh support
+// Mesh.h
+// OBJ mesh support with BVH acceleration
 //
 
 #ifndef DAY_2_MESH_H
@@ -15,6 +8,7 @@
 
 #include "Triangle.h"
 #include "Ray.h"
+#include "BVH.h"
 #include <vector>
 #include <string>
 #include <Eigen/Dense>
@@ -27,14 +21,28 @@ public:
     // バウンディングボックス
     Eigen::Vector3d bboxMin, bboxMax;
 
+    // BVH acceleration structure
+    TriangleBVH bvh;
+    bool bvhBuilt = false;
+
     Mesh() = default;
 
     bool loadOBJ(const std::string &filename);
+
+    // BVHを構築（loadOBJ後に自動で呼ばれる）
+    void buildBVH();
+
+    // 交差判定（BVHを使用）
     bool hit(const Ray &ray, RayHit &hit) const;
+
+    // 変換操作
     void translate(const Eigen::Vector3d &offset);
     void scale(double scale);
     void updateBoundingBox();
     double getMinY() const;
+
+    // BVHの再構築が必要かどうか
+    void invalidateBVH() { bvhBuilt = false; }
 };
 
 #endif //DAY_2_MESH_H

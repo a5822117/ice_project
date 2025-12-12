@@ -2,6 +2,8 @@
 // Ice Rendering with OBJ Mesh
 // Based on "Realistic Rendering of Ice and Crack Propagations" (2017)
 //
+// 【変更点】氷サイズを30→500に拡大（青色検証用）
+//
 
 #include <iostream>
 #include <chrono>
@@ -112,14 +114,20 @@ void iceRenderingWithMesh(const std::string &objFilename, const std::string &csv
     std::cout << "  Min: " << iceMesh->bboxMin.transpose() << std::endl;
     std::cout << "  Max: " << iceMesh->bboxMax.transpose() << std::endl;
 
-    // メッシュをスケーリング
-    double targetSize = 30.0;
+    // ============================================
+    // 【変更】氷サイズを大きく設定（青色検証用）
+    // 元の値: 30.0 → 新しい値: 500.0
+    // 単位を仮にcmとすると、5メートルの氷塊
+    // ============================================
+    double targetSize = 1200.0;  // 変更前: 30.0
+    std::cout << "\n*** ICE SIZE: " << targetSize << " (changed for blue color test) ***\n" << std::endl;
+
     Eigen::Vector3d originalSize = iceMesh->bboxMax - iceMesh->bboxMin;
     double scale = targetSize / originalSize.maxCoeff();
     iceMesh->scale(scale);
 
-    // 床に接地
-    double floorY = -30.0;
+    // 床に接地（床の位置も調整）
+    double floorY = -500.0;  // 変更前: -30.0
     double meshMinY = iceMesh->getMinY();
     iceMesh->translate(Eigen::Vector3d(0, floorY - meshMinY, 0));
 
@@ -141,34 +149,34 @@ void iceRenderingWithMesh(const std::string &objFilename, const std::string &csv
         bubbles = generateBubblesInMesh(iceMesh->bboxMin, iceMesh->bboxMax);
     }
 
-    // シーン構築
+    // シーン構築（部屋のサイズも拡大）
     const auto room_r = 1e7;
     std::vector<Body> bodies;
 
-    // 部屋の壁（拡散マテリアル）
+    // 部屋の壁（拡散マテリアル）- サイズ拡大
     // 右壁
     bodies.emplace_back(
-        Sphere(room_r, (room_r - 50) * Eigen::Vector3d::UnitX()),
+        Sphere(room_r, (room_r - 800) * Eigen::Vector3d::UnitX()),
         Material(codeToColor("#a0522d"), 0.8, 0.0)
     );
     // 左壁
     bodies.emplace_back(
-        Sphere(room_r, -(room_r - 50) * Eigen::Vector3d::UnitX()),
+        Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitX()),
         Material(codeToColor("#4682b4"), 0.8, 0.0)
     );
     // 床
     bodies.emplace_back(
-        Sphere(room_r, (room_r - 30) * Eigen::Vector3d::UnitY()),
+        Sphere(room_r, (room_r - 500) * Eigen::Vector3d::UnitY()),
         Material(codeToColor("#b8b8b8"), 0.8, 0.0)
     );
     // 天井
     bodies.emplace_back(
-        Sphere(room_r, -(room_r - 50) * Eigen::Vector3d::UnitY()),
+        Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitY()),
         Material(codeToColor("#d8d8d8"), 0.8, 0.0)
     );
     // 奥の壁
     bodies.emplace_back(
-        Sphere(room_r, (room_r - 80) * Eigen::Vector3d::UnitZ()),
+        Sphere(room_r, (room_r - 1200) * Eigen::Vector3d::UnitZ()),
         Material(codeToColor("#2e8b57"), 0.8, 0.0)
     );
 
@@ -188,21 +196,21 @@ void iceRenderingWithMesh(const std::string &objFilename, const std::string &csv
         );
     }
 
-    // 光源
+    // 光源（サイズと位置を調整）
     bodies.emplace_back(
-        Sphere(12, Eigen::Vector3d(0, 44, 0)),
+        Sphere(200, Eigen::Vector3d(0, 700, 0)),  // 変更前: Sphere(12, (0, 44, 0))
         Material(Color(1, 1, 1), 1.0, 20)
     );
     bodies.emplace_back(
-        Sphere(6, Eigen::Vector3d(-25, 35, 25)),
+        Sphere(100, Eigen::Vector3d(-400, 550, 400)),  // 変更前: Sphere(6, (-25, 35, 25))
         Material(Color(0.9, 0.9, 1.0), 1.0, 8)
     );
 
     std::cout << "Total objects in scene: " << bodies.size() << std::endl;
 
-    // カメラ設定
+    // カメラ設定（距離を調整）
     Eigen::Vector3d meshCenter = (iceMesh->bboxMin + iceMesh->bboxMax) / 2.0;
-    const Eigen::Vector3d campos(0, meshCenter.y() + 20, 80);
+    const Eigen::Vector3d campos(0, meshCenter.y() + 300, 1300);  // 変更前: (0, +20, 80)
     const Eigen::Vector3d camdir = meshCenter - campos;
     const Camera camera(campos, camdir, 480, 4.0 / 3.0, 55, 35);
 
@@ -227,8 +235,8 @@ void iceRenderingWithMesh(const std::string &objFilename, const std::string &csv
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
     std::cout << "Rendering completed in " << duration.count() << " seconds." << std::endl;
 
-    image.save("ice_mesh_result.png");
-    std::cout << "Saved: ice_mesh_result.png" << std::endl;
+    image.save("ice_mesh_result_large.png");
+    std::cout << "Saved: ice_mesh_result_large.png" << std::endl;
 }
 
 //==============================================================================
@@ -245,28 +253,32 @@ void iceRenderingSimple(const std::string &objFilename) {
         return;
     }
 
-    // スケーリングと配置
-    double targetSize = 30.0;
+    // ============================================
+    // 【変更】氷サイズを大きく設定（青色検証用）
+    // ============================================
+    double targetSize = 500.0;  // 変更前: 30.0
+    std::cout << "\n*** ICE SIZE: " << targetSize << " (changed for blue color test) ***\n" << std::endl;
+
     Eigen::Vector3d originalSize = iceMesh->bboxMax - iceMesh->bboxMin;
     double scale = targetSize / originalSize.maxCoeff();
     iceMesh->scale(scale);
 
-    double floorY = -30.0;
+    double floorY = -500.0;  // 変更前: -30.0
     iceMesh->translate(Eigen::Vector3d(0, floorY - iceMesh->getMinY(), 0));
 
     const auto room_r = 1e7;
     std::vector<Body> bodies;
 
-    // 壁
-    bodies.emplace_back(Sphere(room_r, (room_r - 50) * Eigen::Vector3d::UnitX()),
+    // 壁（サイズ拡大）
+    bodies.emplace_back(Sphere(room_r, (room_r - 800) * Eigen::Vector3d::UnitX()),
                         Material(codeToColor("#a0522d"), 0.8, 0.0));
-    bodies.emplace_back(Sphere(room_r, -(room_r - 50) * Eigen::Vector3d::UnitX()),
+    bodies.emplace_back(Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitX()),
                         Material(codeToColor("#4682b4"), 0.8, 0.0));
-    bodies.emplace_back(Sphere(room_r, (room_r - 30) * Eigen::Vector3d::UnitY()),
+    bodies.emplace_back(Sphere(room_r, (room_r - 500) * Eigen::Vector3d::UnitY()),
                         Material(codeToColor("#b8b8b8"), 0.8, 0.0));
-    bodies.emplace_back(Sphere(room_r, -(room_r - 50) * Eigen::Vector3d::UnitY()),
+    bodies.emplace_back(Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitY()),
                         Material(codeToColor("#d8d8d8"), 0.8, 0.0));
-    bodies.emplace_back(Sphere(room_r, (room_r - 80) * Eigen::Vector3d::UnitZ()),
+    bodies.emplace_back(Sphere(room_r, (room_r - 1200) * Eigen::Vector3d::UnitZ()),
                         Material(codeToColor("#2e8b57"), 0.8, 0.0));
 
     // 氷
@@ -275,11 +287,11 @@ void iceRenderingSimple(const std::string &objFilename) {
                         Material(Color(0.98, 0.98, 1.0), ice_ior, MaterialType::Glass, 0.0));
 
     // 光源
-    bodies.emplace_back(Sphere(12, Eigen::Vector3d(0, 44, 0)),
+    bodies.emplace_back(Sphere(200, Eigen::Vector3d(0, 700, 0)),
                         Material(Color(1, 1, 1), 1.0, 20));
 
     Eigen::Vector3d meshCenter = (iceMesh->bboxMin + iceMesh->bboxMax) / 2.0;
-    const Eigen::Vector3d campos(0, meshCenter.y() + 20, 80);
+    const Eigen::Vector3d campos(0, meshCenter.y() + 300, 1300);
     const Eigen::Vector3d camdir = meshCenter - campos;
     const Camera camera(campos, camdir, 360, 4.0 / 3.0, 55, 35);
 
@@ -296,16 +308,19 @@ void iceRenderingSimple(const std::string &objFilename) {
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
 
     std::cout << "Rendering completed in " << duration.count() << " seconds." << std::endl;
-    image.save("ice_simple_result.png");
-    std::cout << "Saved: ice_simple_result.png" << std::endl;
+    image.save("ice_simple_result_large.png");
+    std::cout << "Saved: ice_simple_result_large.png" << std::endl;
 }
 
 //==============================================================================
-// Spectral Rendering（波長依存レンダリング）
+// Spectral Rendering（波長依存レンダリング）- 青色検証用
 //==============================================================================
 void iceRenderingSpectral(const std::string &objFilename, const std::string &csvFilename = "") {
     std::cout << "=== Spectral Ice Rendering (Wavelength-dependent) ===" << std::endl;
     std::cout << "This mode uses wavelength-dependent IOR for realistic dispersion." << std::endl;
+    std::cout << "\n*** NOTE: Current implementation has wavelength-dependent REFRACTION" << std::endl;
+    std::cout << "*** but does NOT have wavelength-dependent ABSORPTION (Beer-Lambert)." << std::endl;
+    std::cout << "*** Blue color from ice requires absorption, which is not implemented yet.\n" << std::endl;
 
     // ice.objを読み込む
     auto iceMesh = std::make_shared<Mesh>();
@@ -318,14 +333,24 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
 
     std::cout << objFilename << " loaded successfully." << std::endl;
 
-    // メッシュをスケーリング
-    double targetSize = 30.0;
+    // ============================================
+    // 【変更】氷サイズを大幅に拡大（青色検証用）
+    // 元の値: 30.0 → 新しい値: 500.0
+    // これは約5メートルのスケール（単位がcmの場合）
+    // 氷河の青色が見えるには通常10m以上必要
+    // ============================================
+    double targetSize = 800.0;  // 変更前: 30.0
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "*** ICE SIZE: " << targetSize << " ***" << std::endl;
+    std::cout << "*** (Original was 30.0, now ~17x larger) ***" << std::endl;
+    std::cout << "========================================\n" << std::endl;
+
     Eigen::Vector3d originalSize = iceMesh->bboxMax - iceMesh->bboxMin;
     double scale = targetSize / originalSize.maxCoeff();
     iceMesh->scale(scale);
 
-    // 床に接地
-    double floorY = -30.0;
+    // 床に接地（床の位置も調整）
+    double floorY = -400.0;  // 変更前: -30.0
     double meshMinY = iceMesh->getMinY();
     iceMesh->translate(Eigen::Vector3d(0, floorY - meshMinY, 0));
 
@@ -346,37 +371,39 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
         bubbles = generateBubblesInMesh(iceMesh->bboxMin, iceMesh->bboxMax);
     }
 
-    // シーン構築
+    // シーン構築（部屋のサイズも拡大）
     const auto room_r = 1e7;
     std::vector<Body> bodies;
 
-    // 部屋の壁（拡散マテリアル）
+    // 部屋の壁（サイズ拡大）
     bodies.emplace_back(
-        Sphere(room_r, (room_r - 50) * Eigen::Vector3d::UnitX()),
+        Sphere(room_r, (room_r - 800) * Eigen::Vector3d::UnitX()),
         Material(codeToColor("#a0522d"), 0.8, 0.0)
     );
     bodies.emplace_back(
-        Sphere(room_r, -(room_r - 50) * Eigen::Vector3d::UnitX()),
+        Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitX()),
         Material(codeToColor("#4682b4"), 0.8, 0.0)
     );
     bodies.emplace_back(
-        Sphere(room_r, (room_r - 30) * Eigen::Vector3d::UnitY()),
+        Sphere(room_r, (room_r - 500) * Eigen::Vector3d::UnitY()),
         Material(codeToColor("#b8b8b8"), 0.8, 0.0)
     );
     bodies.emplace_back(
-        Sphere(room_r, -(room_r - 50) * Eigen::Vector3d::UnitY()),
+        Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitY()),
         Material(codeToColor("#d8d8d8"), 0.8, 0.0)
     );
     bodies.emplace_back(
-        Sphere(room_r, (room_r - 80) * Eigen::Vector3d::UnitZ()),
+        Sphere(room_r, (room_r - 1200) * Eigen::Vector3d::UnitZ()),
         Material(codeToColor("#2e8b57"), 0.8, 0.0)
     );
 
-    // 氷メッシュ（Glassマテリアル - IORは波長ごとに動的に設定される）
-    const double ice_ior = 1.31;  // デフォルト値（spectralモードでは波長依存IORを使用）
+    // 氷メッシュ（Glassマテリアル + Microfacet）
+    const double ice_ior = 1.31;
+    const double ice_alpha = 0.05;  // マイクロファセット粗さ（0.05〜0.15推奨）
+
     bodies.emplace_back(
         iceMesh,
-        Material(Color(0.98, 0.98, 1.0), ice_ior, MaterialType::Glass, 0.0)
+        Material(Color(0.98, 0.98, 1.0), ice_ior, MaterialType::Glass, 0.0, ice_alpha)
     );
 
     // 気泡を追加（空気球体）
@@ -388,21 +415,17 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
         );
     }
 
-    // 光源
+    // 光源（サイズと位置を調整）
     bodies.emplace_back(
-        Sphere(12, Eigen::Vector3d(0, 44, 0)),
+        Sphere(200, Eigen::Vector3d(0, 700, 0)),
         Material(Color(1, 1, 1), 1.0, 20)
-    );
-    bodies.emplace_back(
-        Sphere(6, Eigen::Vector3d(-25, 35, 25)),
-        Material(Color(0.9, 0.9, 1.0), 1.0, 8)
     );
 
     std::cout << "Total objects in scene: " << bodies.size() << std::endl;
 
-    // カメラ設定
+    // カメラ設定（距離を調整）
     Eigen::Vector3d meshCenter = (iceMesh->bboxMin + iceMesh->bboxMax) / 2.0;
-    const Eigen::Vector3d campos(0, meshCenter.y() + 20, 80);
+    const Eigen::Vector3d campos(0, meshCenter.y() + 300, 1300);
     const Eigen::Vector3d camdir = meshCenter - campos;
     const Camera camera(campos, camdir, 480, 4.0 / 3.0, 55, 35);
 
@@ -412,7 +435,7 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
 
     // Spectralパストレーシング
     std::cout << "Starting Spectral path tracing..." << std::endl;
-    const unsigned int samples = 300;  // 各波長で独立計算するため少し減らす
+    const unsigned int samples = 600;
     std::cout << "Samples per pixel: " << samples << std::endl;
     std::cout << "Wavelengths: " << NUM_WAVELENGTHS << " (400-700nm)" << std::endl;
     std::cout << "Resolution: " << camera.getFilm().resolution.x() << " x "
@@ -428,8 +451,8 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
     std::cout << "Rendering completed in " << duration.count() << " seconds." << std::endl;
 
-    image.save("ice_spectral_result.png");
-    std::cout << "Saved: ice_spectral_result.png" << std::endl;
+    image.save("ice_spectral_result_large.png");
+    std::cout << "Saved: ice_spectral_result_large.png" << std::endl;
 }
 
 //==============================================================================
@@ -441,7 +464,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Based on \"Realistic Rendering of Ice and Crack Propagations\"" << std::endl;
     std::cout << "With Next Event Estimation (NEE)" << std::endl;
     std::cout << "+ Spectral Rendering Support" << std::endl;
+    std::cout << "+ BVH Acceleration" << std::endl;
     std::cout << "============================================" << std::endl;
+    std::cout << "\n*** LARGE ICE SIZE MODE (500 units) ***" << std::endl;
+    std::cout << "*** For testing blue color hypothesis ***\n" << std::endl;
 
     std::string objFile = "ice.obj";
     std::string csvFile = "";

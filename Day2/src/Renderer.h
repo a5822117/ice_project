@@ -1,5 +1,6 @@
 //
-// Path Tracing Renderer with NEE
+// Renderer.h
+// Path Tracing Renderer with NEE and BVH Acceleration
 // Extended for ice/glass rendering
 //
 
@@ -10,12 +11,17 @@
 #include <random>
 #include "Body.h"
 #include "Camera.h"
+#include "SceneBVH.h"
 
 class Renderer {
 public:
     std::vector<Body> bodies;
     Camera camera;
     Color bgColor;
+
+    // BVH acceleration for scene traversal
+    SceneBVH sceneBVH;
+    bool useBVH = true;  // BVH使用フラグ
 
     // 乱数生成器
     mutable std::mt19937_64 engine;
@@ -32,7 +38,11 @@ public:
 
     double rand() const;
 
+    // シーンとの交差判定（BVH高速版）
     bool hitScene(const Ray &ray, RayHit &hit) const;
+
+    // BVHを再構築
+    void rebuildBVH();
 
     // 基本レンダリング
     Image render() const;
@@ -79,6 +89,17 @@ public:
     double sampleGlassBSDF(const Eigen::Vector3d &wo, const Eigen::Vector3d &normal,
                            double n1, double n2, Eigen::Vector3d &wi,
                            bool &isRefraction) const;
+
+    //==========================================================================
+    // Microfacet Model（Ghafari & Park 2017）
+    //==========================================================================
+
+    /// Beckmann分布を使用してマイクロファセット法線をサンプリング
+    /// @param geometricNormal 幾何学的な法線（メッシュの法線）
+    /// @param alpha 表面の粗さパラメータ（0.0 = 完全鏡面）
+    /// @return 摂動されたマイクロファセット法線
+    Eigen::Vector3d sampleBeckmannNormal(const Eigen::Vector3d &geometricNormal,
+                                          double alpha) const;
 };
 
 #endif //DAY_2_RENDERER_H

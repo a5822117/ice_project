@@ -1,6 +1,9 @@
 //
-// Path Tracing Renderer with NEE
+// Renderer.cpp
+// Path Tracing Renderer with NEE and BVH Acceleration
 // Extended for ice/glass rendering
+// + Beer-Lambert absorption for realistic blue ice
+// + Microfacet model for realistic ice surface (Ghafari & Park 2017)
 //
 
 #include "Renderer.h"
@@ -8,6 +11,7 @@
 #include <cfloat>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 
 //==============================================================================
 // ユーティリティ関数
@@ -60,6 +64,20 @@ Renderer::Renderer(const std::vector<Body> &bodies, Camera camera, Color bgColor
     if (!lightIndices.empty()) {
         std::cout << "Found " << lightIndices.size() << " light source(s) for NEE" << std::endl;
     }
+
+    // SceneBVHを構築（これが最も重要な高速化）
+    std::cout << "Building Scene BVH for " << bodies.size() << " objects..." << std::endl;
+    auto bvhStart = std::chrono::high_resolution_clock::now();
+
+    sceneBVH.build(this->bodies);
+
+    auto bvhEnd = std::chrono::high_resolution_clock::now();
+    auto bvhDuration = std::chrono::duration_cast<std::chrono::milliseconds>(bvhEnd - bvhStart);
+    std::cout << "Scene BVH built in " << bvhDuration.count() << " ms" << std::endl;
+}
+
+void Renderer::rebuildBVH() {
+    sceneBVH.build(bodies);
 }
 
 double Renderer::rand() const {
@@ -67,6 +85,12 @@ double Renderer::rand() const {
 }
 
 bool Renderer::hitScene(const Ray &ray, RayHit &hit) const {
+    // BVHを使用した高速な交差判定
+    if (useBVH && sceneBVH.root) {
+        return sceneBVH.intersect(bodies, ray, hit);
+    }
+
+    // フォールバック：線形探索（BVHがない場合）
     hit.t = DBL_MAX;
     hit.idx = -1;
     for (size_t i = 0; i < bodies.size(); ++i) {
@@ -131,7 +155,7 @@ Image Renderer::directIlluminationRender(const unsigned int &samples) const {
 }
 
 //==============================================================================
-// Path Tracing with NEE
+// Path Tracing with NEE (BVH Accelerated)
 //==============================================================================
 
 Image Renderer::pathTracingRender(const unsigned int &samplesPerPixel) const {
@@ -140,6 +164,8 @@ Image Renderer::pathTracingRender(const unsigned int &samplesPerPixel) const {
     int totalPixels = image.height;
     int progressInterval = std::max(1, totalPixels / 20);
     const double maxRadiance = 50.0;
+
+    std::cout << "BVH Acceleration: " << (useBVH ? "ENABLED" : "DISABLED") << std::endl;
 
 #pragma omp parallel for schedule(dynamic, 1)
     for (int p_y = 0; p_y < image.height; p_y++) {
@@ -174,7 +200,8 @@ Image Renderer::pathTracingRender(const unsigned int &samplesPerPixel) const {
 }
 
 //==============================================================================
-// Spectral Rendering（波長依存レンダリング）
+// Spectral Rendering（波長依存レンダリング）with BVH Acceleration
+// + Beer-Lambert Absorption
 //==============================================================================
 
 Image Renderer::spectralRender(const unsigned int &samplesPerPixel) const {
@@ -184,12 +211,22 @@ Image Renderer::spectralRender(const unsigned int &samplesPerPixel) const {
     int progressInterval = std::max(1, totalPixels / 20);
     const double maxRadiance = 50.0;
 
-    std::cout << "=== Spectral Rendering Mode ===" << std::endl;
+    std::cout << "=== Spectral Rendering Mode (BVH Accelerated) ===" << std::endl;
+    std::cout << "BVH Acceleration: " << (useBVH ? "ENABLED" : "DISABLED") << std::endl;
+    std::cout << "Beer-Lambert Absorption: ENABLED" << std::endl;
+    std::cout << "Microfacet Model: ENABLED (Ghafari & Park 2017)" << std::endl;
+    std::cout << "Absorption scale factor: " << ABSORPTION_SCALE << std::endl;
     std::cout << "Wavelengths: ";
     for (int i = 0; i < NUM_WAVELENGTHS; ++i) {
         std::cout << WAVELENGTHS[i] << "nm ";
     }
     std::cout << std::endl;
+
+    // 吸収係数の確認表示
+    std::cout << "Ice absorption coefficients (scaled):" << std::endl;
+    for (int i = 0; i < NUM_WAVELENGTHS; ++i) {
+        std::cout << "  " << WAVELENGTHS[i] << "nm: " << getIceAbsorption(i) << std::endl;
+    }
 
 #pragma omp parallel for schedule(dynamic, 1)
     for (int p_y = 0; p_y < image.height; p_y++) {
@@ -257,8 +294,85 @@ Image Renderer::spectralRender(const unsigned int &samplesPerPixel) const {
 }
 
 //==============================================================================
-// Spectral Path Tracing（単一波長）
-// 【修正】気泡（空気、IOR=1.0）は波長依存しない
+// Microfacet Normal Sampling（Beckmann分布）
+// Ghafari & Park (2017) Algorithm 1 に基づく実装
+//
+// Beckmann正規分布関数（NDF）を使用して、マイクロファセット法線をサンプリングします。
+// これにより、氷の表面が完全に滑らかなガラスではなく、
+// 微細な凹凸を持つリアルな表面として表現されます。
+//
+// パラメータ:
+// - alpha: 表面の粗さ（0.0 = 完全鏡面、大きいほど粗い）
+// - geometricNormal: 幾何学的な法線（メッシュの法線）
+//
+// 戻り値:
+// - 摂動された法線ベクトル（マイクロファセット法線）
+//==============================================================================
+Eigen::Vector3d Renderer::sampleBeckmannNormal(const Eigen::Vector3d &geometricNormal,
+                                                double alpha) const {
+    // alpha が非常に小さい場合は、幾何学的法線をそのまま返す
+    if (alpha < 1e-6) {
+        return geometricNormal;
+    }
+
+    // 2つの一様乱数をサンプリング
+    double r1 = rand();
+    double r2 = rand();
+
+    // Beckmann分布からマイクロファセット法線をサンプリング
+    // theta_h = atan(alpha * sqrt(-log(1 - r1)))
+    // phi_h = 2 * PI * r2
+
+    // r1 = 1 の場合の数値的安定性を確保
+    if (r1 >= 1.0 - 1e-10) {
+        r1 = 1.0 - 1e-10;
+    }
+
+    double theta_h = std::atan(alpha * std::sqrt(-std::log(1.0 - r1)));
+    double phi_h = 2.0 * EIGEN_PI * r2;
+
+    // 有効範囲のチェック（Algorithm 1より）
+    if (theta_h <= 0.0 || theta_h >= EIGEN_PI / 2.0) {
+        return geometricNormal;
+    }
+
+    // ローカル座標系でのマイクロファセット法線
+    // h = (cos(phi_h) * sin(theta_h), sin(phi_h) * sin(theta_h), cos(theta_h))
+    double sin_theta = std::sin(theta_h);
+    double cos_theta = std::cos(theta_h);
+
+    Eigen::Vector3d h_local(
+        std::cos(phi_h) * sin_theta,
+        std::sin(phi_h) * sin_theta,
+        cos_theta
+    );
+
+    // ローカル座標系からワールド座標系への変換
+    // 幾何学的法線を基準とした正規直交基底を構築
+    Eigen::Vector3d u, v;
+    computeLocalFrame(geometricNormal, u, v);
+
+    // ワールド座標系でのマイクロファセット法線
+    Eigen::Vector3d h_world = h_local.x() * u + h_local.y() * v + h_local.z() * geometricNormal;
+
+    // 正規化
+    double len = h_world.norm();
+    if (len < 1e-8 || !std::isfinite(len)) {
+        return geometricNormal;
+    }
+    h_world /= len;
+
+    // マイクロファセット法線が幾何学的法線と反対側を向いていないかチェック
+    if (h_world.dot(geometricNormal) < 0.0) {
+        h_world = -h_world;
+    }
+
+    return h_world;
+}
+
+//==============================================================================
+// Spectral Path Tracing（単一波長）with BVH and Beer-Lambert Absorption
+// + Microfacet Model
 //==============================================================================
 
 double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
@@ -293,11 +407,27 @@ double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
 
     if (mat.type == MaterialType::Glass) {
         //======================================================================
-        // Glass/Ice material - 波長依存の屈折率を使用
-        // 【重要な修正】気泡（空気、IOR≈1.0）は波長依存しない
+        // Glass/Ice material - 波長依存の屈折率と吸収を使用
+        // + Microfacet Model（Ghafari & Park 2017）
         //======================================================================
         Eigen::Vector3d incident = ray.dir.normalized();
-        Eigen::Vector3d normal = hit.normal.normalized();
+        Eigen::Vector3d geometricNormal = hit.normal.normalized();
+
+        //======================================================================
+        // マイクロファセットモデル：法線の摂動
+        //
+        // Ghafari & Park (2017) の Algorithm 1 に基づき、
+        // Beckmann分布を使用してマイクロファセット法線をサンプリングします。
+        // これにより、氷の表面が完全に滑らかではなく、
+        // 微細な凹凸を持つリアルな表面として表現されます。
+        //======================================================================
+        Eigen::Vector3d normal;
+        if (mat.isMicrofacet()) {
+            normal = sampleBeckmannNormal(geometricNormal, mat.alpha);
+        } else {
+            normal = geometricNormal;
+        }
+
         double n1, n2;
 
         double cosI = -incident.dot(normal);
@@ -305,7 +435,9 @@ double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
         // 波長依存の屈折率を取得
         // 気泡（空気）の場合はIOR=1.0を維持、氷の場合のみ波長依存IORを使用
         double spectralIOR;
-        if (std::abs(mat.ior - 1.0) < 0.05) {
+        bool hitMaterialIsIce = mat.isIce();  // 衝突したマテリアルが氷かどうか
+
+        if (mat.isAir()) {
             // 空気（気泡）: 波長に依存しないIOR = 1.0
             spectralIOR = 1.0;
         } else {
@@ -313,6 +445,8 @@ double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
             spectralIOR = getIceIOR(wavelengthIndex);
         }
 
+        // 法線の向きを調整
+        bool enteringMaterial = cosI > 0;
         if (cosI < 0) {
             normal = -normal;
             cosI = -cosI;
@@ -353,10 +487,14 @@ double Renderer::tracePathSpectral(const Ray &ray, unsigned int depth,
         double incomingRadiance = tracePathSpectral(newRay, depth + 1, wavelengthIndex,
                                                      newInsideObject, newIOR, true);
 
-        // 媒質内での減衰（マテリアルカラーをグレースケール化）
-        if (insideObject && isRefraction) {
-            double attenuation = (mat.color.x() + mat.color.y() + mat.color.z()) / 3.0;
-            incomingRadiance *= attenuation;
+        //======================================================================
+        // Beer-Lambert吸収の適用
+        //======================================================================
+        if (insideObject && !mat.isAir() && hit.t > 0) {
+            double travelDistance = hit.t;
+            double absorptionCoeff = getIceAbsorption(wavelengthIndex);
+            double transmittance = beerLambertTransmittance(absorptionCoeff, travelDistance);
+            incomingRadiance *= transmittance;
         }
 
         result = incomingRadiance;
@@ -425,10 +563,19 @@ Color Renderer::tracePath(const Ray &ray, unsigned int depth,
 
     if (mat.type == MaterialType::Glass) {
         //======================================================================
-        // Glass/Ice material
+        // Glass/Ice material + Microfacet Model
         //======================================================================
         Eigen::Vector3d incident = ray.dir.normalized();
-        Eigen::Vector3d normal = hit.normal.normalized();
+        Eigen::Vector3d geometricNormal = hit.normal.normalized();
+
+        // マイクロファセットモデル：法線の摂動
+        Eigen::Vector3d normal;
+        if (mat.isMicrofacet()) {
+            normal = sampleBeckmannNormal(geometricNormal, mat.alpha);
+        } else {
+            normal = geometricNormal;
+        }
+
         double n1, n2;
 
         double cosI = -incident.dot(normal);
@@ -518,7 +665,7 @@ Color Renderer::tracePath(const Ray &ray, unsigned int depth,
 }
 
 //==============================================================================
-// NEE - Direct Light Sampling
+// NEE - Direct Light Sampling (BVH optimized shadow rays)
 //==============================================================================
 
 Color Renderer::sampleDirectLight(const Eigen::Vector3d &hitPoint,
@@ -557,7 +704,7 @@ Color Renderer::sampleDirectLight(const Eigen::Vector3d &hitPoint,
         double cosThetaLight = -lightNormal.dot(wi);
         if (cosThetaLight <= 0) continue;
 
-        // シャドウレイテスト
+        // シャドウレイテスト（BVH高速化）
         Ray shadowRay(hitPoint + normal * 1e-4, wi);
         RayHit shadowHit;
 

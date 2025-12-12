@@ -3,7 +3,7 @@ project(Day2)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# ソースファイル
+# ソースファイル（BVH.cppを追加）
 set(SOURCES
         src/main.cpp
         src/Image.cpp
@@ -13,6 +13,7 @@ set(SOURCES
         src/Color.cpp
         src/Mesh.cpp
         src/Triangle.cpp
+        src/BVH.cpp
 )
 
 set(HEADERS
@@ -28,6 +29,8 @@ set(HEADERS
         src/BubbleLoader.h
         src/Mesh.h
         src/Triangle.h
+        src/BVH.h
+        src/SceneBVH.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
@@ -48,11 +51,19 @@ if(OPENMP_CXX_FOUND)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
-# コンパイラ最適化フラグ
+# コンパイラ最適化フラグ（Release時に有効）
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE /O2 /arch:AVX2)
     else()
-        target_compile_options(${PROJECT_NAME} PRIVATE -O3 -march=native)
+        target_compile_options(${PROJECT_NAME} PRIVATE -O3 -march=native -ffast-math)
     endif()
 endif()
+
+# デフォルトでReleaseビルドを使用
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "BVH acceleration enabled for scene traversal")
