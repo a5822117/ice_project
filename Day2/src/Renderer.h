@@ -2,6 +2,7 @@
 // Renderer.h
 // Path Tracing Renderer with NEE and BVH Acceleration
 // Extended for ice/glass rendering
+// + Hero Wavelength Sampling for faster spectral rendering
 //
 
 #ifndef DAY_2_RENDERER_H
@@ -21,7 +22,7 @@ public:
 
     // BVH acceleration for scene traversal
     SceneBVH sceneBVH;
-    bool useBVH = true;  // BVH使用フラグ
+    bool useBVH = true;
 
     // 乱数生成器
     mutable std::mt19937_64 engine;
@@ -53,8 +54,14 @@ public:
     // パストレーシングレンダリング with NEE
     Image pathTracingRender(const unsigned int &samplesPerPixel) const;
 
-    // Spectral Rendering（波長依存レンダリング）
+    // Spectral Rendering（従来版：全波長を毎回計算）
     Image spectralRender(const unsigned int &samplesPerPixel) const;
+
+    //==========================================================================
+    // Hero Wavelength Sampling による高速スペクトルレンダリング
+    // 各サンプルで1波長のみを追跡し、約7倍高速化
+    //==========================================================================
+    Image spectralRenderHero(const unsigned int &samplesPerPixel) const;
 
     // 再帰的パストレース
     Color tracePath(const Ray &ray, unsigned int depth,
@@ -93,11 +100,6 @@ public:
     //==========================================================================
     // Microfacet Model（Ghafari & Park 2017）
     //==========================================================================
-
-    /// Beckmann分布を使用してマイクロファセット法線をサンプリング
-    /// @param geometricNormal 幾何学的な法線（メッシュの法線）
-    /// @param alpha 表面の粗さパラメータ（0.0 = 完全鏡面）
-    /// @return 摂動されたマイクロファセット法線
     Eigen::Vector3d sampleBeckmannNormal(const Eigen::Vector3d &geometricNormal,
                                           double alpha) const;
 };

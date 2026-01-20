@@ -1,6 +1,7 @@
 //
 // Mesh.h
 // OBJ mesh support with BVH acceleration
+// + Y軸回転サポート追加
 //
 
 #ifndef DAY_2_MESH_H
@@ -38,6 +39,7 @@ public:
     // 変換操作
     void translate(const Eigen::Vector3d &offset);
     void scale(double scale);
+    void rotateY(double degrees);  // ★追加: Y軸周りの回転
     void updateBoundingBox();
     double getMinY() const;
 

@@ -3,6 +3,7 @@
 // Extended for ice rendering with glass/ice materials
 // + Beer-Lambert absorption for realistic blue ice color
 // + Microfacet model for realistic ice surface (Ghafari & Park 2017)
+// + Hero Wavelength Sampling support
 //
 
 #ifndef DAY_3_MATERIAL_H
@@ -23,7 +24,6 @@ constexpr int NUM_WAVELENGTHS = 7;
 constexpr std::array<double, NUM_WAVELENGTHS> WAVELENGTHS = {400, 450, 500, 550, 600, 650, 700};
 
 // 氷の屈折率（波長依存）- Warren 1984 の実測データに基づく
-// 短波長（青）ほど屈折率が高い → 分散効果
 constexpr std::array<double, NUM_WAVELENGTHS> ICE_IOR = {
     1.3170,  // 400nm
     1.3140,  // 450nm
@@ -37,39 +37,56 @@ constexpr std::array<double, NUM_WAVELENGTHS> ICE_IOR = {
 //==============================================================================
 // 氷の吸収係数（Beer-Lambert則用）
 // Warren & Brandt (2008) "Optical constants of ice" に基づく
-//
-// 単位: m^-1 (1メートルあたりの吸収)
-//
-// 重要な物理:
-// - 青色光（400-500nm）: 吸収係数が非常に小さい → よく透過する
-// - 赤色光（600-700nm）: 吸収係数が大きい → 吸収されやすい
-// - この差により、厚い氷を通過した光は青く見える
-//
-// Beer-Lambert則: I(d) = I₀ × exp(-α × d)
-// ここで α は吸収係数、d は光路長
+// 単位: m^-1
 //==============================================================================
 constexpr std::array<double, NUM_WAVELENGTHS> ICE_ABSORPTION_COEFF = {
-    0.0170,   // 400nm - 青紫: 非常に低い吸収
-    0.0106,   // 450nm - 青: 最も低い吸収（氷が青く見える主因）
-    0.0114,   // 500nm - 青緑: 低い吸収
-    0.0264,   // 550nm - 緑: やや吸収
-    0.0619,   // 600nm - 橙: 吸収増加
-    0.2570,   // 650nm - 赤橙: 高い吸収
-    0.4100    // 700nm - 赤: 非常に高い吸収（青の約40倍）
+    0.0170,   // 400nm
+    0.0106,   // 450nm - 最も低い吸収
+    0.0114,   // 500nm
+    0.0264,   // 550nm
+    0.0619,   // 600nm
+    0.2570,   // 650nm
+    0.4100    // 700nm - 最も高い吸収
 };
 
 // 吸収のスケールファクター
-// シーンの単位系に合わせて調整
-// 値が大きいほど吸収が強くなる（青みが増す）
-// デフォルト: 1.0 = 単位がメートルの場合
-// シーンがセンチメートル単位の場合: 0.01
-// シーンの単位が任意の場合、視覚的に調整
-constexpr double ABSORPTION_SCALE = 0.01;  // シーン単位に合わせて調整
+constexpr double ABSORPTION_SCALE = 0.01;
+
+//==============================================================================
+// Hero Wavelength Sampling 用：XYZ等色関数
+// CIE 1931 標準観測者（簡易版、7波長）
+//==============================================================================
+constexpr std::array<double, NUM_WAVELENGTHS> CIE_X = {
+    0.01431, 0.33620, 0.00490, 0.43400, 1.06200, 0.28310, 0.01100
+};
+constexpr std::array<double, NUM_WAVELENGTHS> CIE_Y = {
+    0.00040, 0.03800, 0.32300, 0.99500, 0.63100, 0.10700, 0.00400
+};
+constexpr std::array<double, NUM_WAVELENGTHS> CIE_Z = {
+    0.06790, 1.77211, 0.27200, 0.00880, 0.00080, 0.00000, 0.00000
+};
+
+//==============================================================================
+// Hero Wavelength Sampling ユーティリティ関数
+//==============================================================================
+
+/// 一様乱数から波長インデックスをサンプリング
+/// @param u 一様乱数 [0, 1)
+/// @return 波長インデックス (0 to NUM_WAVELENGTHS-1)
+inline int sampleWavelengthIndex(double u) {
+    int idx = static_cast<int>(u * NUM_WAVELENGTHS);
+    return std::min(idx, NUM_WAVELENGTHS - 1);
+}
+
+/// 波長サンプリングのPDFを取得（一様サンプリング）
+inline double getWavelengthPDF() {
+    return 1.0 / NUM_WAVELENGTHS;
+}
 
 /// 波長インデックスから氷のIORを取得
 inline double getIceIOR(int wavelengthIndex) {
     if (wavelengthIndex < 0 || wavelengthIndex >= NUM_WAVELENGTHS) {
-        return 1.31;  // デフォルト値
+        return 1.31;
     }
     return ICE_IOR[wavelengthIndex];
 }
@@ -77,25 +94,21 @@ inline double getIceIOR(int wavelengthIndex) {
 /// 波長インデックスから氷の吸収係数を取得
 inline double getIceAbsorption(int wavelengthIndex) {
     if (wavelengthIndex < 0 || wavelengthIndex >= NUM_WAVELENGTHS) {
-        return 0.05;  // デフォルト値
+        return 0.05;
     }
     return ICE_ABSORPTION_COEFF[wavelengthIndex] * ABSORPTION_SCALE;
 }
 
 /// Beer-Lambert則による透過率を計算
-/// @param absorptionCoeff 吸収係数 (m^-1 or scene units^-1)
-/// @param distance 光路長 (m or scene units)
-/// @return 透過率 (0.0 - 1.0)
 inline double beerLambertTransmittance(double absorptionCoeff, double distance) {
     if (distance <= 0.0 || absorptionCoeff <= 0.0) {
-        return 1.0;  // 吸収なし
+        return 1.0;
     }
     return std::exp(-absorptionCoeff * distance);
 }
 
 /// 波長（nm）から氷のIORを補間計算
 inline double getIceIORByWavelength(double wavelength_nm) {
-    // 線形補間
     if (wavelength_nm <= WAVELENGTHS[0]) return ICE_IOR[0];
     if (wavelength_nm >= WAVELENGTHS[NUM_WAVELENGTHS-1]) return ICE_IOR[NUM_WAVELENGTHS-1];
 
@@ -108,26 +121,16 @@ inline double getIceIORByWavelength(double wavelength_nm) {
     return 1.31;
 }
 
-// CIE 1931 XYZ等色関数（簡易版、正規化済み）
-// 各波長でのX, Y, Z応答
-constexpr std::array<double, NUM_WAVELENGTHS> CIE_X = {
-    0.01431, 0.33620, 0.00490, 0.43400, 1.06200, 0.28310, 0.01100
-};
-constexpr std::array<double, NUM_WAVELENGTHS> CIE_Y = {
-    0.00040, 0.03800, 0.32300, 0.99500, 0.63100, 0.10700, 0.00400
-};
-constexpr std::array<double, NUM_WAVELENGTHS> CIE_Z = {
-    0.06790, 1.77211, 0.27200, 0.00880, 0.00080, 0.00000, 0.00000
-};
+//==============================================================================
+// XYZ → RGB 変換
+//==============================================================================
 
 /// XYZ色空間からsRGB色空間への変換
 inline Color XYZtoRGB(double X, double Y, double Z) {
-    // sRGB D65変換行列
     double R =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z;
     double G = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z;
     double B =  0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z;
 
-    // 負の値をクランプ
     R = std::max(0.0, R);
     G = std::max(0.0, G);
     B = std::max(0.0, B);
@@ -146,21 +149,8 @@ struct Material {
     double kd;
     double emission;
     MaterialType type;
-    double ior;  // 屈折率（Index of Refraction）
-
-    //==========================================================================
-    // Microfacet パラメータ（Ghafari & Park 2017）
-    //
-    // alpha: Beckmann分布の粗さパラメータ
-    // - alpha = 0.0: 完全に滑らかな表面（通常のガラス）
-    // - alpha = 0.05〜0.15: 氷の表面（推奨値）
-    // - alpha = 0.3以上: 非常に粗い表面（曇りガラス）
-    //
-    // 氷は完全に滑らかなガラスとは異なり、表面に微細な凹凸があるため、
-    // 光が散乱して曇ったように見えます。このalphaパラメータにより、
-    // その効果を再現します。
-    //==========================================================================
-    double alpha;  // マイクロファセット粗さ（0.0 = 完全鏡面）
+    double ior;
+    double alpha;  // マイクロファセット粗さ
 
 public:
     /// 拡散マテリアルのコンストラクタ
@@ -168,8 +158,7 @@ public:
         : color(std::move(color)), kd(kd), emission(emission),
           type(MaterialType::Diffuse), ior(1.0), alpha(0.0) {}
 
-    /// ガラス/氷マテリアルのコンストラクタ（マイクロファセット対応）
-    /// @param alpha マイクロファセット粗さ（0.0〜1.0、氷の場合0.05〜0.15推奨）
+    /// ガラス/氷マテリアルのコンストラクタ
     Material(Color color, double ior, MaterialType type, const double &emission = 0.0,
              double alpha = 0.0)
         : color(std::move(color)), kd(0.0), emission(emission),
@@ -187,17 +176,14 @@ public:
         return emission > 0.0;
     }
 
-    /// マイクロファセットモデルを使用するかどうか
     bool isMicrofacet() const {
         return alpha > 1e-6;
     }
 
-    /// このマテリアルが氷かどうか判定（IOR ≈ 1.31）
     bool isIce() const {
         return type == MaterialType::Glass && std::abs(ior - 1.31) < 0.05;
     }
 
-    /// このマテリアルが空気（気泡）かどうか判定（IOR ≈ 1.0）
     bool isAir() const {
         return type == MaterialType::Glass && std::abs(ior - 1.0) < 0.05;
     }
@@ -232,7 +218,7 @@ inline bool refract(const Eigen::Vector3d &incident, const Eigen::Vector3d &norm
     if (cosI < 0) cosI = std::abs(cosI);
 
     double sin2T = eta * eta * (1.0 - cosI * cosI);
-    if (sin2T > 1.0 - 1e-8) return false;  // 全反射
+    if (sin2T > 1.0 - 1e-8) return false;
 
     double cosT = std::sqrt(std::max(0.0, 1.0 - sin2T));
     refracted = eta * incident + (eta * cosI - cosT) * normal;

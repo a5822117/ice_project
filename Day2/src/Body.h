@@ -1,24 +1,30 @@
 //
-// Created by kango on 2023/04/03.
-// Extended for OBJ mesh and glass materials
+// Body.h
+// Extended for OBJ mesh, glass materials, and ellipsoid bubbles
 //
 
 #ifndef DAY_3_BODY_H
 #define DAY_3_BODY_H
 
 #include "Sphere.h"
+#include "Ellipsoid.h"
 #include "Mesh.h"
 #include "Material.h"
 #include <memory>
 #include <variant>
 
 struct Body {
-    std::variant<Sphere, std::shared_ptr<Mesh>> geometry;
+    // ★変更: Ellipsoid を追加
+    std::variant<Sphere, Ellipsoid, std::shared_ptr<Mesh>> geometry;
     Material material;
 
     // Sphere用コンストラクタ
     Body(Sphere sphere, Material material)
         : geometry(std::move(sphere)), material(std::move(material)) {}
+
+    // ★追加: Ellipsoid用コンストラクタ
+    Body(Ellipsoid ellipsoid, Material material)
+        : geometry(std::move(ellipsoid)), material(std::move(material)) {}
 
     // Mesh用コンストラクタ
     Body(std::shared_ptr<Mesh> mesh, Material material)
@@ -28,6 +34,8 @@ struct Body {
         return std::visit([&ray, &hit](const auto &geo) -> bool {
             using T = std::decay_t<decltype(geo)>;
             if constexpr (std::is_same_v<T, Sphere>) {
+                return geo.hit(ray, hit);
+            } else if constexpr (std::is_same_v<T, Ellipsoid>) {
                 return geo.hit(ray, hit);
             } else if constexpr (std::is_same_v<T, std::shared_ptr<Mesh>>) {
                 return geo->hit(ray, hit);
@@ -49,6 +57,14 @@ struct Body {
             using T = std::decay_t<decltype(geo)>;
             if constexpr (std::is_same_v<T, Sphere>) {
                 return (p - geo.center).normalized();
+            } else if constexpr (std::is_same_v<T, Ellipsoid>) {
+                // 楕円体の法線（hitで計算済みだが、一応近似）
+                Eigen::Vector3d local = p - geo.center;
+                return Eigen::Vector3d(
+                    local.x() / (geo.radii.x() * geo.radii.x()),
+                    local.y() / (geo.radii.y() * geo.radii.y()),
+                    local.z() / (geo.radii.z() * geo.radii.z())
+                ).normalized();
             } else {
                 // Meshの場合は交差判定時に法線が設定される
                 return Eigen::Vector3d::UnitY();
@@ -68,13 +84,17 @@ struct Body {
         return material.ior;
     }
 
-    // バウンディングボックスを取得（Mesh用）
+    // バウンディングボックスを取得
     bool getBoundingBox(Eigen::Vector3d &bboxMin, Eigen::Vector3d &bboxMax) const {
         return std::visit([&bboxMin, &bboxMax](const auto &geo) -> bool {
             using T = std::decay_t<decltype(geo)>;
             if constexpr (std::is_same_v<T, Sphere>) {
                 bboxMin = geo.center - Eigen::Vector3d::Ones() * geo.radius;
                 bboxMax = geo.center + Eigen::Vector3d::Ones() * geo.radius;
+                return true;
+            } else if constexpr (std::is_same_v<T, Ellipsoid>) {
+                bboxMin = geo.center - geo.radii;
+                bboxMax = geo.center + geo.radii;
                 return true;
             } else if constexpr (std::is_same_v<T, std::shared_ptr<Mesh>>) {
                 bboxMin = geo->bboxMin;
@@ -92,6 +112,11 @@ struct Body {
             if constexpr (std::is_same_v<T, Sphere>) {
                 center = geo.center;
                 radius = geo.radius;
+                return true;
+            } else if constexpr (std::is_same_v<T, Ellipsoid>) {
+                // 楕円体の場合は平均半径を使用
+                center = geo.center;
+                radius = geo.maxRadius();
                 return true;
             }
             return false;
