@@ -2,7 +2,7 @@
 // Renderer.h
 // Path Tracing Renderer with NEE and BVH Acceleration
 // Extended for ice/glass rendering
-// + Hero Wavelength Sampling for faster spectral rendering
+// + Hero Wavelength Sampling for efficient spectral rendering
 //
 
 #ifndef DAY_2_RENDERER_H
@@ -54,25 +54,35 @@ public:
     // パストレーシングレンダリング with NEE
     Image pathTracingRender(const unsigned int &samplesPerPixel) const;
 
-    // Spectral Rendering（従来版：全波長を毎回計算）
+    // Spectral Rendering（従来版 - 7波長独立サンプリング）
     Image spectralRender(const unsigned int &samplesPerPixel) const;
 
     //==========================================================================
-    // Hero Wavelength Sampling による高速スペクトルレンダリング
-    // 各サンプルで1波長のみを追跡し、約7倍高速化
+    // Hero Wavelength Sampling（効率化版）
+    // 各サンプルで1つの波長をランダムに選択し、その波長でパストレース
+    // 計算量が約1/7に削減される
     //==========================================================================
     Image spectralRenderHero(const unsigned int &samplesPerPixel) const;
 
-    // 再帰的パストレース
+    // 再帰的パストレース（RGB版）
     Color tracePath(const Ray &ray, unsigned int depth,
                     bool insideObject = false, double currentIOR = 1.0,
                     bool prevSpecular = true) const;
 
-    // Spectral用: 単一波長でのパストレース
+    // Spectral用: 単一波長でのパストレース（離散波長インデックス版）
     double tracePathSpectral(const Ray &ray, unsigned int depth,
                              int wavelengthIndex,
                              bool insideObject = false, double currentIOR = 1.0,
                              bool prevSpecular = true) const;
+
+    //==========================================================================
+    // Hero Wavelength用: 連続波長でのパストレース
+    // wavelength_nm: 波長（nm単位、400-700の連続値）
+    //==========================================================================
+    double tracePathHero(const Ray &ray, unsigned int depth,
+                         double wavelength_nm,
+                         bool insideObject = false, double currentIOR = 1.0,
+                         bool prevSpecular = true) const;
 
     // NEE: 光源直接サンプリング
     Color sampleDirectLight(const Eigen::Vector3d &hitPoint,

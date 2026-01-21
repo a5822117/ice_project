@@ -14,7 +14,6 @@ set(SOURCES
         src/Mesh.cpp
         src/Triangle.cpp
         src/BVH.cpp
-        src/Ellipsoid.cpp
 )
 
 set(HEADERS
@@ -32,7 +31,6 @@ set(HEADERS
         src/Triangle.h
         src/BVH.h
         src/SceneBVH.h
-        src/Ellipsoid.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})

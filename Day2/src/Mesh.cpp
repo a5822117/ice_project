@@ -1,16 +1,13 @@
 //
 // Mesh.cpp
 // OBJ mesh support with BVH acceleration
-// + Y軸回転サポート追加
 //
-#define _USE_MATH_DEFINES
 
 #include "Mesh.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <limits>
-#include <cmath>
 
 bool Mesh::loadOBJ(const std::string &filename) {
     std::ifstream file(filename);
@@ -145,62 +142,6 @@ void Mesh::scale(double s) {
 
     // 変換後はBVHを再構築
     buildBVH();
-}
-
-//==============================================================================
-// ★追加: Y軸周りの回転
-// バウンディングボックスの中心を原点として回転
-//==============================================================================
-void Mesh::rotateY(double degrees) {
-    // 度数法からラジアンに変換
-    double radians = degrees * M_PI / 180.0;
-    double cosA = std::cos(radians);
-    double sinA = std::sin(radians);
-
-    // バウンディングボックスの中心を回転の原点とする
-    Eigen::Vector3d center = (bboxMin + bboxMax) / 2.0;
-
-    std::cout << "Rotating mesh " << degrees << " degrees around Y axis" << std::endl;
-    std::cout << "  Rotation center: " << center.transpose() << std::endl;
-
-    // 頂点を回転
-    for (auto &v : vertices) {
-        Eigen::Vector3d local = v - center;
-        double newX = local.x() * cosA + local.z() * sinA;
-        double newZ = -local.x() * sinA + local.z() * cosA;
-        v.x() = center.x() + newX;
-        v.z() = center.z() + newZ;
-    }
-
-    // 三角形の頂点も回転し、法線を再計算
-    for (auto &tri : triangles) {
-        // v0
-        Eigen::Vector3d local0 = tri.v0 - center;
-        tri.v0.x() = center.x() + local0.x() * cosA + local0.z() * sinA;
-        tri.v0.z() = center.z() - local0.x() * sinA + local0.z() * cosA;
-
-        // v1
-        Eigen::Vector3d local1 = tri.v1 - center;
-        tri.v1.x() = center.x() + local1.x() * cosA + local1.z() * sinA;
-        tri.v1.z() = center.z() - local1.x() * sinA + local1.z() * cosA;
-
-        // v2
-        Eigen::Vector3d local2 = tri.v2 - center;
-        tri.v2.x() = center.x() + local2.x() * cosA + local2.z() * sinA;
-        tri.v2.z() = center.z() - local2.x() * sinA + local2.z() * cosA;
-
-        // 法線を再計算
-        tri.normal = (tri.v1 - tri.v0).cross(tri.v2 - tri.v0).normalized();
-    }
-
-    updateBoundingBox();
-
-    // 変換後はBVHを再構築
-    buildBVH();
-
-    std::cout << "  New bounding box:" << std::endl;
-    std::cout << "    Min: " << bboxMin.transpose() << std::endl;
-    std::cout << "    Max: " << bboxMax.transpose() << std::endl;
 }
 
 void Mesh::updateBoundingBox() {

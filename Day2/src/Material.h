@@ -23,7 +23,13 @@
 constexpr int NUM_WAVELENGTHS = 7;
 constexpr std::array<double, NUM_WAVELENGTHS> WAVELENGTHS = {400, 450, 500, 550, 600, 650, 700};
 
+// 波長間隔（nm）- Hero Wavelength Samplingで使用
+constexpr double WAVELENGTH_MIN = 400.0;
+constexpr double WAVELENGTH_MAX = 700.0;
+constexpr double WAVELENGTH_RANGE = WAVELENGTH_MAX - WAVELENGTH_MIN;
+
 // 氷の屈折率（波長依存）- Warren 1984 の実測データに基づく
+// 短波長（青）ほど屈折率が高い → 分散効果
 constexpr std::array<double, NUM_WAVELENGTHS> ICE_IOR = {
     1.3170,  // 400nm
     1.3140,  // 450nm
@@ -37,53 +43,58 @@ constexpr std::array<double, NUM_WAVELENGTHS> ICE_IOR = {
 //==============================================================================
 // 氷の吸収係数（Beer-Lambert則用）
 // Warren & Brandt (2008) "Optical constants of ice" に基づく
-// 単位: m^-1
+// 単位: m^-1 (1メートルあたりの吸収)
 //==============================================================================
 constexpr std::array<double, NUM_WAVELENGTHS> ICE_ABSORPTION_COEFF = {
-    0.0170,   // 400nm
-    0.0106,   // 450nm - 最も低い吸収
-    0.0114,   // 500nm
-    0.0264,   // 550nm
-    0.0619,   // 600nm
-    0.2570,   // 650nm
-    0.4100    // 700nm - 最も高い吸収
+    0.0170,   // 400nm - 青紫: 非常に低い吸収
+    0.0106,   // 450nm - 青: 最も低い吸収（氷が青く見える主因）
+    0.0114,   // 500nm - 青緑: 低い吸収
+    0.0264,   // 550nm - 緑: やや吸収
+    0.0619,   // 600nm - 橙: 吸収増加
+    0.2570,   // 650nm - 赤橙: 高い吸収
+    0.4100    // 700nm - 赤: 非常に高い吸収（青の約40倍）
 };
 
-// 吸収のスケールファクター
-constexpr double ABSORPTION_SCALE = 0.01;
+// 吸収のスケールファクター - シーンの単位系に合わせて調整
+constexpr double ABSORPTION_SCALE = 0.003;
 
 //==============================================================================
-// Hero Wavelength Sampling 用：XYZ等色関数
-// CIE 1931 標準観測者（簡易版、7波長）
-//==============================================================================
-constexpr std::array<double, NUM_WAVELENGTHS> CIE_X = {
-    0.01431, 0.33620, 0.00490, 0.43400, 1.06200, 0.28310, 0.01100
-};
-constexpr std::array<double, NUM_WAVELENGTHS> CIE_Y = {
-    0.00040, 0.03800, 0.32300, 0.99500, 0.63100, 0.10700, 0.00400
-};
-constexpr std::array<double, NUM_WAVELENGTHS> CIE_Z = {
-    0.06790, 1.77211, 0.27200, 0.00880, 0.00080, 0.00000, 0.00000
-};
-
-//==============================================================================
-// Hero Wavelength Sampling ユーティリティ関数
+// Hero Wavelength Sampling 用ユーティリティ
 //==============================================================================
 
-/// 一様乱数から波長インデックスをサンプリング
-/// @param u 一様乱数 [0, 1)
-/// @return 波長インデックス (0 to NUM_WAVELENGTHS-1)
-inline int sampleWavelengthIndex(double u) {
-    int idx = static_cast<int>(u * NUM_WAVELENGTHS);
-    return std::min(idx, NUM_WAVELENGTHS - 1);
+/// 連続波長から氷のIORを線形補間で取得
+inline double getIceIORContinuous(double wavelength_nm) {
+    if (wavelength_nm <= WAVELENGTH_MIN) return ICE_IOR[0];
+    if (wavelength_nm >= WAVELENGTH_MAX) return ICE_IOR[NUM_WAVELENGTHS - 1];
+
+    // 線形補間
+    double t = (wavelength_nm - WAVELENGTH_MIN) / WAVELENGTH_RANGE;
+    int idx = static_cast<int>(t * (NUM_WAVELENGTHS - 1));
+    idx = std::min(idx, NUM_WAVELENGTHS - 2);
+
+    double local_t = (wavelength_nm - WAVELENGTHS[idx]) / (WAVELENGTHS[idx + 1] - WAVELENGTHS[idx]);
+    local_t = std::max(0.0, std::min(1.0, local_t));
+
+    return ICE_IOR[idx] * (1.0 - local_t) + ICE_IOR[idx + 1] * local_t;
 }
 
-/// 波長サンプリングのPDFを取得（一様サンプリング）
-inline double getWavelengthPDF() {
-    return 1.0 / NUM_WAVELENGTHS;
+/// 連続波長から氷の吸収係数を線形補間で取得
+inline double getIceAbsorptionContinuous(double wavelength_nm) {
+    if (wavelength_nm <= WAVELENGTH_MIN) return ICE_ABSORPTION_COEFF[0] * ABSORPTION_SCALE;
+    if (wavelength_nm >= WAVELENGTH_MAX) return ICE_ABSORPTION_COEFF[NUM_WAVELENGTHS - 1] * ABSORPTION_SCALE;
+
+    double t = (wavelength_nm - WAVELENGTH_MIN) / WAVELENGTH_RANGE;
+    int idx = static_cast<int>(t * (NUM_WAVELENGTHS - 1));
+    idx = std::min(idx, NUM_WAVELENGTHS - 2);
+
+    double local_t = (wavelength_nm - WAVELENGTHS[idx]) / (WAVELENGTHS[idx + 1] - WAVELENGTHS[idx]);
+    local_t = std::max(0.0, std::min(1.0, local_t));
+
+    double coeff = ICE_ABSORPTION_COEFF[idx] * (1.0 - local_t) + ICE_ABSORPTION_COEFF[idx + 1] * local_t;
+    return coeff * ABSORPTION_SCALE;
 }
 
-/// 波長インデックスから氷のIORを取得
+/// 波長インデックスから氷のIORを取得（離散版 - 後方互換性用）
 inline double getIceIOR(int wavelengthIndex) {
     if (wavelengthIndex < 0 || wavelengthIndex >= NUM_WAVELENGTHS) {
         return 1.31;
@@ -91,7 +102,7 @@ inline double getIceIOR(int wavelengthIndex) {
     return ICE_IOR[wavelengthIndex];
 }
 
-/// 波長インデックスから氷の吸収係数を取得
+/// 波長インデックスから氷の吸収係数を取得（離散版 - 後方互換性用）
 inline double getIceAbsorption(int wavelengthIndex) {
     if (wavelengthIndex < 0 || wavelengthIndex >= NUM_WAVELENGTHS) {
         return 0.05;
@@ -107,23 +118,45 @@ inline double beerLambertTransmittance(double absorptionCoeff, double distance) 
     return std::exp(-absorptionCoeff * distance);
 }
 
-/// 波長（nm）から氷のIORを補間計算
-inline double getIceIORByWavelength(double wavelength_nm) {
-    if (wavelength_nm <= WAVELENGTHS[0]) return ICE_IOR[0];
-    if (wavelength_nm >= WAVELENGTHS[NUM_WAVELENGTHS-1]) return ICE_IOR[NUM_WAVELENGTHS-1];
+//==============================================================================
+// CIE 1931 XYZ等色関数（連続波長対応版）
+//==============================================================================
 
-    for (int i = 0; i < NUM_WAVELENGTHS - 1; ++i) {
-        if (wavelength_nm >= WAVELENGTHS[i] && wavelength_nm <= WAVELENGTHS[i+1]) {
-            double t = (wavelength_nm - WAVELENGTHS[i]) / (WAVELENGTHS[i+1] - WAVELENGTHS[i]);
-            return ICE_IOR[i] * (1.0 - t) + ICE_IOR[i+1] * t;
-        }
+// 離散版（7波長）
+constexpr std::array<double, NUM_WAVELENGTHS> CIE_X = {
+    0.01431, 0.33620, 0.00490, 0.43400, 1.06200, 0.28310, 0.01100
+};
+constexpr std::array<double, NUM_WAVELENGTHS> CIE_Y = {
+    0.00040, 0.03800, 0.32300, 0.99500, 0.63100, 0.10700, 0.00400
+};
+constexpr std::array<double, NUM_WAVELENGTHS> CIE_Z = {
+    0.06790, 1.77211, 0.27200, 0.00880, 0.00080, 0.00000, 0.00000
+};
+
+/// 連続波長からCIE XYZ応答を線形補間で取得
+inline void getCIEXYZContinuous(double wavelength_nm, double& x, double& y, double& z) {
+    if (wavelength_nm <= WAVELENGTH_MIN) {
+        x = CIE_X[0]; y = CIE_Y[0]; z = CIE_Z[0];
+        return;
     }
-    return 1.31;
-}
+    if (wavelength_nm >= WAVELENGTH_MAX) {
+        x = CIE_X[NUM_WAVELENGTHS - 1];
+        y = CIE_Y[NUM_WAVELENGTHS - 1];
+        z = CIE_Z[NUM_WAVELENGTHS - 1];
+        return;
+    }
 
-//==============================================================================
-// XYZ → RGB 変換
-//==============================================================================
+    double t = (wavelength_nm - WAVELENGTH_MIN) / WAVELENGTH_RANGE;
+    int idx = static_cast<int>(t * (NUM_WAVELENGTHS - 1));
+    idx = std::min(idx, NUM_WAVELENGTHS - 2);
+
+    double local_t = (wavelength_nm - WAVELENGTHS[idx]) / (WAVELENGTHS[idx + 1] - WAVELENGTHS[idx]);
+    local_t = std::max(0.0, std::min(1.0, local_t));
+
+    x = CIE_X[idx] * (1.0 - local_t) + CIE_X[idx + 1] * local_t;
+    y = CIE_Y[idx] * (1.0 - local_t) + CIE_Y[idx + 1] * local_t;
+    z = CIE_Z[idx] * (1.0 - local_t) + CIE_Z[idx + 1] * local_t;
+}
 
 /// XYZ色空間からsRGB色空間への変換
 inline Color XYZtoRGB(double X, double Y, double Z) {
@@ -168,25 +201,11 @@ public:
     Material() : color(Color::Ones()), kd(0.8), emission(0.0),
                  type(MaterialType::Diffuse), ior(1.0), alpha(0.0) {}
 
-    bool isGlass() const {
-        return type == MaterialType::Glass;
-    }
-
-    bool isEmissive() const {
-        return emission > 0.0;
-    }
-
-    bool isMicrofacet() const {
-        return alpha > 1e-6;
-    }
-
-    bool isIce() const {
-        return type == MaterialType::Glass && std::abs(ior - 1.31) < 0.05;
-    }
-
-    bool isAir() const {
-        return type == MaterialType::Glass && std::abs(ior - 1.0) < 0.05;
-    }
+    bool isGlass() const { return type == MaterialType::Glass; }
+    bool isEmissive() const { return emission > 0.0; }
+    bool isMicrofacet() const { return alpha > 1e-6; }
+    bool isIce() const { return type == MaterialType::Glass && std::abs(ior - 1.31) < 0.05; }
+    bool isAir() const { return type == MaterialType::Glass && std::abs(ior - 1.0) < 0.05; }
 };
 
 //==============================================================================
@@ -203,8 +222,7 @@ inline double fresnelSchlick(double cosTheta, double n1, double n2) {
     double R0 = ratio * ratio;
     double oneMinusCos = 1.0 - cosTheta;
     double oneMinusCos5 = oneMinusCos * oneMinusCos * oneMinusCos * oneMinusCos * oneMinusCos;
-    double R = R0 + (1.0 - R0) * oneMinusCos5;
-    return std::min(1.0, std::max(0.0, R));
+    return std::min(1.0, std::max(0.0, R0 + (1.0 - R0) * oneMinusCos5));
 }
 
 /// 屈折方向を計算（スネルの法則）
