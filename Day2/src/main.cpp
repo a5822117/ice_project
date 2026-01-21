@@ -211,24 +211,6 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
     const Camera camera(campos, camdir, 480, 4.0 / 3.0, 55, 35);
 
 
-    // Y軸周りに20度回転（横方向）
-    {
-        double angleRad =330.0 * EIGEN_PI / 180.0;
-        double cosA = std::cos(angleRad);
-        double sinA = std::sin(angleRad);
-        Eigen::Vector3d center = (iceMesh->bboxMin + iceMesh->bboxMax) / 2.0;
-        for (auto &tri : iceMesh->triangles) {
-            for (auto* p : {&tri.v0, &tri.v1, &tri.v2}) {
-                Eigen::Vector3d rel = *p - center;
-                *p = center + Eigen::Vector3d(cosA * rel.x() + sinA * rel.z(), rel.y(), -sinA * rel.x() + cosA * rel.z());
-            }
-            tri.normal = (tri.v1 - tri.v0).cross(tri.v2 - tri.v0).normalized();
-        }
-        iceMesh->updateBoundingBox();
-        iceMesh->buildBVH();
-    }
-
-
 
 
     // レンダラー設定
@@ -237,7 +219,7 @@ void iceRenderingSpectral(const std::string &objFilename, const std::string &csv
 
     // Hero Wavelength Spectral レンダリング
     std::cout << "\n=== Starting Hero Wavelength Spectral Rendering ===" << std::endl;
-    const unsigned int samples = 5000;
+    const unsigned int samples = 500;
     std::cout << "Samples per pixel: " << samples << std::endl;
     std::cout << "Resolution: " << camera.getFilm().resolution.x() << " x "
               << camera.getFilm().resolution.y() << std::endl;
