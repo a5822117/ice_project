@@ -252,7 +252,7 @@ void iceRenderingRGB(const std::string &objFilename, const std::string &csvFilen
         return;
     }
 
-    double targetSize = 500.0;
+    double targetSize = 300.0;
     Eigen::Vector3d originalSize = iceMesh->bboxMax - iceMesh->bboxMin;
     double scale = targetSize / originalSize.maxCoeff();
     iceMesh->scale(scale);
@@ -275,15 +275,15 @@ void iceRenderingRGB(const std::string &objFilename, const std::string &csvFilen
     std::vector<Body> bodies;
 
     bodies.emplace_back(Sphere(room_r, (room_r - 800) * Eigen::Vector3d::UnitX()),
-                        Material(codeToColor("#a0522d"), 0.8, 0.0));
+                        Material(codeToColor("#faeded"), 0.8, 0.0));
     bodies.emplace_back(Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitX()),
-                        Material(codeToColor("#4682b4"), 0.8, 0.0));
+                        Material(codeToColor("#faeded"), 0.8, 0.0));
     bodies.emplace_back(Sphere(room_r, (room_r - 500) * Eigen::Vector3d::UnitY()),
-                        Material(codeToColor("#b8b8b8"), 0.8, 0.0));
+                        Material(codeToColor("#faeded"), 0.8, 0.0));
     bodies.emplace_back(Sphere(room_r, -(room_r - 800) * Eigen::Vector3d::UnitY()),
-                        Material(codeToColor("#d8d8d8"), 0.8, 0.0));
+                        Material(codeToColor("#a0522d"), 0.8, 0.0));
     bodies.emplace_back(Sphere(room_r, (room_r - 1200) * Eigen::Vector3d::UnitZ()),
-                        Material(codeToColor("#2e8b57"), 0.8, 0.0));
+                        Material(codeToColor("#faeded"), 0.8, 0.0));
 
     const double ice_ior = 1.31;
     const double ice_alpha = 0.05;
@@ -297,7 +297,7 @@ void iceRenderingRGB(const std::string &objFilename, const std::string &csvFilen
     }
 
     bodies.emplace_back(Sphere(200, Eigen::Vector3d(0, 700, 0)),
-                        Material(Color(1, 1, 1), 1.0, 20));
+                        Material(Color(1, 1, 1), 1.0, 18));
 
     std::cout << "Total objects: " << bodies.size() << std::endl;
 
